@@ -5,8 +5,10 @@ torch>=2.6.0
 accelerate>=1.0.0
 python-dotenv>=1.0.1
 pydantic>=2.9.0
-datasets>=3.0.0
-peft>=0.13.0
-# bitsandbytes is typically unsupported on native Windows; keep it for non-Windows only.
-bitsandbytes>=0.43.0; platform_system != "Windows"
-scipy>=1.14.0
+
+# Fine-tuning dependencies (commented out for inference-only deployment)
+# Uncomment these when fine-tuning later with labeled dataset
+# datasets>=3.0.0
+# peft>=0.13.0
+# scipy>=1.14.0
+# bitsandbytes>=0.43.0; platform_system != "Windows"
