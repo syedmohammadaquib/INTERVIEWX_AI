@@ -7,6 +7,7 @@ import json
 import uvicorn
 import os
 from dotenv import load_dotenv
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -77,8 +78,21 @@ def load_model():
 
 @app.on_event("startup")
 async def startup_event():
-    """Load model on startup"""
-    load_model()
+    """Optionally load the model on startup.
+
+    If `SKIP_MODEL_LOAD` is set (true/1/yes) the service will start quickly
+    and the model will be loaded lazily on first request instead. Otherwise
+    the model load is started in a background thread so the server becomes
+    responsive while the heavy load runs asynchronously.
+    """
+    skip = os.getenv("SKIP_MODEL_LOAD", "false").lower() in ("1", "true", "yes")
+    if skip:
+        print("SKIP_MODEL_LOAD set — skipping model load on startup.")
+        return
+
+    # Start model load in background to avoid blocking startup
+    print("Starting background model load...")
+    asyncio.create_task(asyncio.to_thread(load_model))
 
 def format_conversation_for_analysis(conversation: List[ConversationMessage]) -> str:
     """Format conversation messages for analysis"""
@@ -165,8 +179,14 @@ Return your analysis in this exact JSON format:
 Be thorough, professional, and provide specific examples from the conversation.
 """
 
+        # If model wasn't loaded on startup (or is still loading), load it lazily
         if generator is None:
-            raise HTTPException(status_code=500, detail="AI model not loaded")
+            try:
+                print("Model not loaded yet — loading now (lazy load)...")
+                await asyncio.to_thread(load_model)
+            except Exception as e:
+                print(f"Failed to load model on-demand: {e}")
+                raise HTTPException(status_code=503, detail="AI model not available")
 
         # Generate analysis
         print("Generating interview analysis...")
