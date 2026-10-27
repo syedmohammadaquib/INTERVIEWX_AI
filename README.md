@@ -209,7 +209,7 @@ MY_AI_PYTHON_ENDPOINT=http://localhost:8000/analyze
 **Python service (.env):**
 ```env
 # Hugging Face Configuration
-HF_MODEL=microsoft/DialoGPT-medium
+HF_MODEL=Qwen/Qwen2.5-1.5B-Instruct
 HF_TOKEN=your_hugging_face_token_here
 
 # Server Configuration
@@ -234,14 +234,11 @@ npm run dev
 
 | Model | Size | Quality | Speed | Use Case |
 |-------|------|---------|-------|----------|
-| `microsoft/DialoGPT-small` | 117MB | Good | ⚡ Fast | Quick analysis |
-| `microsoft/DialoGPT-medium` | 345MB | Better | 🚀 Fast | **Default choice** |
-| `microsoft/DialoGPT-large` | 762MB | Best | 🐌 Slower | High-quality analysis |
-| `facebook/blenderbot-400M-distill` | 400MB | Excellent | 🚀 Fast | Conversation specialist |
+| `Qwen/Qwen2.5-1.5B-Instruct` | 1.5B parameters | Candidate default | CPU-friendly relative to larger models | Local prototype |
 
 ### Fine-tuning Your Model
 
-MY_AI includes a fine-tuning script to create interview-specific models:
+MY_AI includes a fine-tuning script for adapting the selected base model to interview analysis. Fine-tuning has not been run yet:
 
 ```bash
 cd MY_AI/python-service

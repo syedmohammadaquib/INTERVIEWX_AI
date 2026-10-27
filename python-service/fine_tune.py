@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Fine-tuning script for Hugging Face models on interview feedback data.
-This script fine-tunes a base model (like DialoGPT or BlenderBot) on interview conversations
+This script fine-tunes an instruction-tuned causal language model on interview conversations
 to generate structured feedback similar to the current Groq analysis.
 
 Usage:
-    python fine_tune.py --model_name microsoft/DialoGPT-medium --dataset_path ./data --output_dir ./fine_tuned_model
+    python fine_tune.py --model_name Qwen/Qwen2.5-1.5B-Instruct --dataset_path ./data --output_dir ./fine_tuned_model
 
 Requirements:
     pip install transformers torch datasets accelerate peft bitsandbytes
@@ -18,6 +18,7 @@ from typing import List, Dict, Any
 
 import torch
 from transformers import (
+    AutoConfig,
     AutoTokenizer,
     AutoModelForCausalLM,
     TrainingArguments,
@@ -131,14 +132,14 @@ def setup_quantization_config():
     )
 
 
-def setup_lora_config():
+def setup_lora_config(task_type: str):
     """Setup LoRA configuration for parameter-efficient fine-tuning."""
     return LoraConfig(
         r=16,
         lora_alpha=32,
         lora_dropout=0.05,
         bias="none",
-        task_type="CAUSAL_LM" if "DialoGPT" in os.getenv("HF_MODEL", "") else "SEQ_2_SEQ_LM",
+        task_type=task_type,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     )
 
@@ -183,21 +184,23 @@ def main(args):
     print("Loading model...")
     quantization_config = setup_quantization_config() if args.use_quantization else None
 
-    if "DialoGPT" in args.model_name:
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,
-            quantization_config=quantization_config,
-            device_map="auto" if device == "cuda" else None,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        )
-    else:
-        # For seq2seq models like BlenderBot
+    model_config = AutoConfig.from_pretrained(args.model_name)
+    if model_config.is_encoder_decoder:
         model = AutoModelForSeq2SeqLM.from_pretrained(
             args.model_name,
             quantization_config=quantization_config,
             device_map="auto" if device == "cuda" else None,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         )
+        lora_task_type = "SEQ_2_SEQ_LM"
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            quantization_config=quantization_config,
+            device_map="auto" if device == "cuda" else None,
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        )
+        lora_task_type = "CAUSAL_LM"
 
     # Prepare model for k-bit training if using quantization
     if args.use_quantization:
@@ -206,7 +209,7 @@ def main(args):
     # Apply LoRA if specified
     if args.use_lora:
         print("Applying LoRA configuration...")
-        lora_config = setup_lora_config()
+        lora_config = setup_lora_config(lora_task_type)
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
 
@@ -282,7 +285,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fine-tune Hugging Face model for interview feedback")
 
     # Model arguments
-    parser.add_argument("--model_name", type=str, default="microsoft/DialoGPT-medium",
+    parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct",
                        help="Hugging Face model name to fine-tune")
     parser.add_argument("--output_dir", type=str, default="./fine_tuned_model",
                        help="Output directory for fine-tuned model")

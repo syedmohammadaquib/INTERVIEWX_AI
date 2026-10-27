@@ -33,7 +33,7 @@ def load_model():
     """Load the Hugging Face model for interview analysis"""
     global model, tokenizer, generator
 
-    model_name = os.getenv("HF_MODEL", "microsoft/DialoGPT-medium")  # Default to DialoGPT for conversation analysis
+    model_name = os.getenv("HF_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
 
     try:
         print(f"Loading model: {model_name}")
@@ -190,8 +190,19 @@ Be thorough, professional, and provide specific examples from the conversation.
 
         # Generate analysis
         print("Generating interview analysis...")
+        formatted_prompt = tokenizer.apply_chat_template(
+            [
+                {
+                    "role": "system",
+                    "content": "You are an evidence-based interview analyst. Return only valid JSON matching the requested schema.",
+                },
+                {"role": "user", "content": analysis_prompt},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
         outputs = generator(
-            analysis_prompt,
+            formatted_prompt,
             max_new_tokens=1024,
             temperature=0.3,
             do_sample=True,
@@ -199,9 +210,9 @@ Be thorough, professional, and provide specific examples from the conversation.
             pad_token_id=tokenizer.eos_token_id
         )
 
-        response_text = outputs[0]['generated_text']
+        response_text = outputs[0]["generated_text"]
         # Remove the prompt from response
-        analysis_result = response_text[len(analysis_prompt):].strip()
+        analysis_result = response_text[len(formatted_prompt):].strip()
 
         # Parse the response
         structured_feedback = parse_ai_response(analysis_result)

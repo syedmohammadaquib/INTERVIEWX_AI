@@ -14,7 +14,7 @@ Copy `.env.example` to `.env` and configure:
 
 ```env
 # Hugging Face Model Configuration
-HF_MODEL=microsoft/DialoGPT-medium  # or any other conversational model
+HF_MODEL=Qwen/Qwen2.5-1.5B-Instruct
 HF_TOKEN=your_hugging_face_token    # optional, for private models
 
 # Server Configuration
@@ -85,26 +85,9 @@ Service information and available endpoints.
 
 ## 🔧 Model Configuration
 
-### Recommended Models for Interview Analysis:
+### Selected Model
 
-1. **microsoft/DialoGPT-medium** (Default)
-   - Good for conversation analysis
-   - Fast inference
-   - Works well for structured feedback
-
-2. **microsoft/DialoGPT-large**
-   - Better analysis quality
-   - More detailed responses
-   - Requires more RAM
-
-3. **facebook/blenderbot-400M-distill**
-   - Specialized for dialogue
-   - Good conversation understanding
-
-4. **Custom Fine-tuned Models**
-   - Train on interview datasets
-   - Domain-specific analysis
-   - Best accuracy
+The default is `Qwen/Qwen2.5-1.5B-Instruct`, an instruction-tuned causal language model loaded locally with Transformers and PyTorch. It is a starting point for CPU inference on modest hardware; evaluate its analysis quality and speed on representative interviews before relying on it. Fine-tuning has not been completed.
 
 ### Fine-tuning for Interview Analysis
 
@@ -126,7 +109,7 @@ training_data = [
 from transformers import Trainer, TrainingArguments
 
 # Load base model
-model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")
+model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
 
 # Fine-tune on interview data
 trainer = Trainer(model=model, ...)
@@ -176,7 +159,7 @@ web: python main.py
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HF_MODEL` | `microsoft/DialoGPT-medium` | Hugging Face model to use |
+| `HF_MODEL` | `Qwen/Qwen2.5-1.5B-Instruct` | Hugging Face model to use |
 | `HF_TOKEN` | None | Hugging Face API token |
 | `PORT` | `8000` | Server port |
 | `HOST` | `0.0.0.0` | Server host |
@@ -234,13 +217,13 @@ npm run dev  # Start Next.js
 **Minimum (CPU):**
 - RAM: 4GB
 - Storage: 2GB
-- Model: DialoGPT-medium
+- Model: Qwen2.5-1.5B-Instruct
 
 **Recommended (GPU):**
 - RAM: 8GB+
 - GPU: 4GB VRAM
 - Storage: 5GB
-- Model: DialoGPT-large
+- Model: Use a smaller model or quantized inference if hardware is constrained
 
 ### Performance Metrics
 
@@ -263,7 +246,7 @@ export HF_TOKEN=your_token
 **"CUDA out of memory"**
 ```bash
 # Use smaller model
-export HF_MODEL=microsoft/DialoGPT-small
+export HF_MODEL=Qwen/Qwen2.5-0.5B-Instruct
 # Or use CPU
 unset CUDA_VISIBLE_DEVICES
 ```
