@@ -89,6 +89,10 @@ Service information and available endpoints.
 
 The default is `Qwen/Qwen2.5-1.5B-Instruct`, an instruction-tuned causal language model loaded locally with Transformers and PyTorch. It is a starting point for CPU inference on modest hardware; evaluate its analysis quality and speed on representative interviews before relying on it. Fine-tuning has not been completed.
 
+### Analysis Instructions
+
+The system instruction and analysis prompt template are stored in `instructions.json`. The service reads this file for each `/analyze` request, so prompt wording can be edited there without changing `main.py` or restarting the service. The `{conversation}` placeholder is replaced with the submitted interview transcript.
+
 ### Fine-tuning for Interview Analysis
 
 To create a model specialized for interview feedback:

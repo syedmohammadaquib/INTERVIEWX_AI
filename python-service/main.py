@@ -6,6 +6,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import json
 import uvicorn
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 import asyncio
 
@@ -105,37 +106,30 @@ def format_conversation_for_analysis(conversation: List[ConversationMessage]) ->
 
 def parse_ai_response(response_text: str) -> Dict[str, Any]:
     """Parse the AI response into structured feedback format"""
+    start_idx = response_text.find("{")
+    end_idx = response_text.rfind("}") + 1
+
+    if start_idx == -1 or end_idx <= start_idx:
+        raise HTTPException(
+            status_code=502,
+            detail="The model did not return valid JSON feedback.",
+        )
+
     try:
-        # Try to extract JSON from response
-        start_idx = response_text.find('{')
-        end_idx = response_text.rfind('}') + 1
+        parsed = json.loads(response_text[start_idx:end_idx])
+    except json.JSONDecodeError as error:
+        raise HTTPException(
+            status_code=502,
+            detail="The model returned malformed JSON feedback.",
+        ) from error
 
-        if start_idx != -1 and end_idx > start_idx:
-            json_str = response_text[start_idx:end_idx]
-            parsed = json.loads(json_str)
-            return parsed
-    except:
-        pass
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("feedback"), dict):
+        raise HTTPException(
+            status_code=502,
+            detail="The model response is missing the feedback object.",
+        )
 
-    # Fallback: extract ratings and create structured response
-    return {
-        "feedback": {
-            "rating": {
-                "relevance": 3,
-                "technicalDepth": 3,
-                "clarity": 3,
-                "communicationQuality": 3
-            },
-            "summary": response_text[:300] + "..." if len(response_text) > 300 else response_text,
-            "recommendation": "Maybe",
-            "recommendationMessage": "Analysis completed with AI model",
-            "strengths": ["Communication skills", "Technical knowledge"],
-            "improvements": ["Could provide more detailed examples", "Practice problem-solving"],
-            "technicalAssessment": "Demonstrates solid technical foundation",
-            "communicationAssessment": "Clear and professional communication",
-            "overallConfidence": 75
-        }
-    }
+    return parsed
 
 @app.post("/analyze", response_model=FeedbackResponse)
 async def analyze_interview(request: FeedbackRequest):
@@ -147,43 +141,21 @@ async def analyze_interview(request: FeedbackRequest):
         # Format conversation for analysis
         conversation_text = format_conversation_for_analysis(request.conversation)
 
-        # Create analysis prompt
-        analysis_prompt = f"""
-You are an expert technical interviewer analyzing an interview conversation.
-
-INTERVIEW CONVERSATION:
-{conversation_text}
-
-Please provide detailed feedback on this candidate's performance. Analyze their technical knowledge, communication skills, problem-solving ability, and overall fit.
-
-Return your analysis in this exact JSON format:
-{{
-  "feedback": {{
-    "rating": {{
-      "relevance": 1-5,
-      "technicalDepth": 1-5,
-      "clarity": 1-5,
-      "communicationQuality": 1-5
-    }},
-    "summary": "4-5 sentence summary of candidate performance",
-    "recommendation": "Yes/No/Maybe",
-    "recommendationMessage": "Detailed justification for recommendation",
-    "strengths": ["strength1", "strength2", "strength3"],
-    "improvements": ["improvement1", "improvement2"],
-    "technicalAssessment": "Detailed technical skills evaluation",
-    "communicationAssessment": "Communication skills evaluation",
-    "overallConfidence": 1-100
-  }}
-}}
-
-Be thorough, professional, and provide specific examples from the conversation.
-"""
+        instructions_path = Path(__file__).with_name("instructions.json")
+        instructions = json.loads(instructions_path.read_text(encoding="utf-8"))
+        system_instruction = instructions.get("system")
+        analysis_template = instructions.get("analysis_template")
+        if not isinstance(system_instruction, str) or not isinstance(analysis_template, str):
+            raise RuntimeError(f"Invalid instruction file format: {instructions_path}")
+        analysis_prompt = analysis_template.replace("{conversation}", conversation_text)
 
         # If model wasn't loaded on startup (or is still loading), load it lazily
         if generator is None:
             try:
                 print("Model not loaded yet — loading now (lazy load)...")
                 await asyncio.to_thread(load_model)
+            except HTTPException:
+                raise
             except Exception as e:
                 print(f"Failed to load model on-demand: {e}")
                 raise HTTPException(status_code=503, detail="AI model not available")
@@ -194,7 +166,7 @@ Be thorough, professional, and provide specific examples from the conversation.
             [
                 {
                     "role": "system",
-                    "content": "You are an evidence-based interview analyst. Return only valid JSON matching the requested schema.",
+                    "content": system_instruction,
                 },
                 {"role": "user", "content": analysis_prompt},
             ],
@@ -219,6 +191,8 @@ Be thorough, professional, and provide specific examples from the conversation.
 
         return FeedbackResponse(data=structured_feedback)
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
