@@ -179,7 +179,6 @@ MY_AI/
     ├── requirements.txt         # 📦 Python dependencies
     ├── README.md               # 🚀 Python service documentation
     ├── start.sh / start.bat    # ▶️ Startup scripts
-    ├── .env.example           # ⚙️ Configuration template
     └── fine_tune.py           # 🎯 Model fine-tuning script
 ```
 

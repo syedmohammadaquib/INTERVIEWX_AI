@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+evaluation_report.json
+fine_tuned_model/
+checkpoint-*/

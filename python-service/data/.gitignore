@@ -1,1 +1,4 @@
 *.json
+!schema.json
+!train/training_data_001.json
+!test/test_data_001.json

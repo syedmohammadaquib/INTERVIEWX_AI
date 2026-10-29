@@ -10,19 +10,14 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configure Environment
-Copy `.env.example` to `.env` and configure:
+Configure the existing local `.env` file:
 
 ```env
-# Hugging Face Model Configuration
 HF_MODEL=Qwen/Qwen2.5-1.5B-Instruct
-HF_TOKEN=your_hugging_face_token    # optional, for private models
-
-# Server Configuration
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.8-flash
 PORT=8000
 HOST=0.0.0.0
-
-# GPU Configuration (optional)
-CUDA_VISIBLE_DEVICES=0  # for GPU usage
 ```
 
 ### 3. Run the Service
@@ -92,6 +87,24 @@ The default is `Qwen/Qwen2.5-1.5B-Instruct`, an instruction-tuned causal languag
 ### Analysis Instructions
 
 The system instruction and analysis prompt template are stored in `instructions.json`. The scoring definitions and evidence rules are stored separately in `rubric.json`; the service combines both files for each `/analyze` request. Edit these files to change prompt wording or grading standards without changing `main.py` or restarting the service. The `{conversation}` placeholder is replaced with the submitted interview transcript.
+
+### Dataset Validation and Evaluation
+
+Set `GEMINI_API_KEY` in the local `.env` file. Add labeled training examples
+under `data/train/` and held-out examples under `data/test/`, following
+`data/schema.json`. From this directory, run:
+
+```cmd
+python evaluate.py --allow-gemini-data
+```
+
+The script validates both datasets before loading Qwen or calling Gemini. It
+then runs Qwen on each test example, checks the generated feedback schema,
+compares ratings and recommendations with human-reviewed labels, and asks
+Gemini to assess evidence grounding. Test transcripts, Qwen responses, and
+reference feedback are sent to Google Gemini, so use only anonymized data you
+are authorized to share. The report is written to `evaluation_report.json`.
+Gemini judge scores are estimates and should be reviewed by a human.
 
 ### Fine-tuning for Interview Analysis
 

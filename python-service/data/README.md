@@ -11,7 +11,8 @@ as needed.
 Do not use test examples for training. Keep them separately in `test/`; see
 `test/README.md`. The current script does not read or evaluate test data.
 
-Each training example should have this shape:
+The exact machine-readable format is defined in [`schema.json`](./schema.json).
+Each dataset file is a JSON array and each item is one training example:
 
 ```json
 [

@@ -5,6 +5,7 @@ torch>=2.6.0
 accelerate>=1.0.0
 python-dotenv>=1.0.1
 pydantic>=2.9.0
+jsonschema>=4.23.0
 
 # Fine-tuning dependencies (commented out for inference-only deployment)
 # Uncomment these when fine-tuning later with labeled dataset
