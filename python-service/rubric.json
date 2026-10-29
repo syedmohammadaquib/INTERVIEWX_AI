@@ -1,0 +1,23 @@
+{
+  "score_scale": {
+    "1": "Very weak: the answer is incorrect, absent, or shows major gaps for this criterion.",
+    "2": "Limited: shows partial understanding but has notable gaps or errors.",
+    "3": "Adequate: generally answers the question with a reasonable level of correctness and detail.",
+    "4": "Strong: gives a correct, relevant, and well-supported answer with only minor gaps.",
+    "5": "Excellent: gives a highly accurate, relevant, clear, and thorough answer supported by specific evidence."
+  },
+  "criteria": {
+    "relevance": "How directly and completely the candidate addresses the interviewer's question.",
+    "technicalDepth": "The accuracy, detail, and demonstrated understanding of technical concepts relevant to the question.",
+    "clarity": "How understandable, organized, and logically expressed the candidate's answer is.",
+    "communicationQuality": "How effectively the candidate explains ideas, reasoning, and examples to the interviewer."
+  },
+  "scoring_rules": [
+    "Score each criterion independently using only the candidate's answers in the transcript.",
+    "Do not treat an unanswered question or a short transcript as proof of poor ability; mark the criterion as having insufficient evidence in the written feedback.",
+    "Use specific transcript evidence in the summary and assessments. Do not claim the candidate said or did anything that is not present.",
+    "Use a recommendation of Maybe when the evidence is limited or mixed. Use Yes or No only when the interview contains enough relevant evidence to support that conclusion.",
+    "Overall confidence describes how complete and clear the available evidence is; it is not a measure of how certain the model sounds.",
+    "If role requirements are not provided, assess the answers shown but do not claim a definitive overall job fit."
+  ]
+}

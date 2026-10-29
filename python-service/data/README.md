@@ -1,11 +1,17 @@
 # Interview analysis training data
 
-Keep approved, anonymized training examples in this directory. The fine-tuning
-script currently reads `train.json` and optionally `val.json`; it does not read
-a test set. Keep a separate `test.json` held out and evaluate it separately
-before considering a model ready.
+Put training files in `train/` and name them `training_data_001.json`,
+`training_data_002.json`, and so on. The fine-tuning script combines every
+matching JSON file in filename order by appending their array entries in
+memory; it does not create a merged JSON file. Each file should contain a JSON
+array of examples. `train/training_data_001.json` is an empty starter file;
+replace its contents with your reviewed examples, and add more numbered files
+as needed.
 
-Each JSON file should contain an array of examples in this shape:
+Do not use test examples for training. Keep them separately in `test/`; see
+`test/README.md`. The current script does not read or evaluate test data.
+
+Each training example should have this shape:
 
 ```json
 [
@@ -34,7 +40,7 @@ Each JSON file should contain an array of examples in this shape:
 ]
 ```
 
-Labels should be reviewed against a consistent rubric. Use consented data,
-remove names and other identifying details, and split examples by candidate
-between train, validation, and test to avoid placing the same interview in
-multiple splits. Do not put real candidate data in version control.
+Labels should be reviewed against the rubric in `../rubric.json`. Use
+consented data, remove names and other identifying details, and ensure the
+same interview or candidate does not appear in both training and test data.
+Do not put real candidate data in version control.

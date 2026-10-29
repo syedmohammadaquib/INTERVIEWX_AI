@@ -143,11 +143,21 @@ async def analyze_interview(request: FeedbackRequest):
 
         instructions_path = Path(__file__).with_name("instructions.json")
         instructions = json.loads(instructions_path.read_text(encoding="utf-8"))
+        rubric_path = Path(__file__).with_name("rubric.json")
+        rubric = json.loads(rubric_path.read_text(encoding="utf-8"))
         system_instruction = instructions.get("system")
         analysis_template = instructions.get("analysis_template")
-        if not isinstance(system_instruction, str) or not isinstance(analysis_template, str):
+        if (
+            not isinstance(system_instruction, str)
+            or not isinstance(analysis_template, str)
+            or not isinstance(rubric, dict)
+        ):
             raise RuntimeError(f"Invalid instruction file format: {instructions_path}")
         analysis_prompt = analysis_template.replace("{conversation}", conversation_text)
+        system_instruction = (
+            f"{system_instruction}\n\nSCORING RUBRIC:\n"
+            f"{json.dumps(rubric, ensure_ascii=False, indent=2)}"
+        )
 
         # If model wasn't loaded on startup (or is still loading), load it lazily
         if generator is None:

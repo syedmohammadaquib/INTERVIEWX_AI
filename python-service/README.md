@@ -91,7 +91,7 @@ The default is `Qwen/Qwen2.5-1.5B-Instruct`, an instruction-tuned causal languag
 
 ### Analysis Instructions
 
-The system instruction and analysis prompt template are stored in `instructions.json`. The service reads this file for each `/analyze` request, so prompt wording can be edited there without changing `main.py` or restarting the service. The `{conversation}` placeholder is replaced with the submitted interview transcript.
+The system instruction and analysis prompt template are stored in `instructions.json`. The scoring definitions and evidence rules are stored separately in `rubric.json`; the service combines both files for each `/analyze` request. Edit these files to change prompt wording or grading standards without changing `main.py` or restarting the service. The `{conversation}` placeholder is replaced with the submitted interview transcript.
 
 ### Fine-tuning for Interview Analysis
 

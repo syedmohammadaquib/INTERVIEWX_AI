@@ -12,6 +12,7 @@ Requirements:
 """
 
 import argparse
+import glob
 import json
 import os
 from typing import List, Dict, Any
@@ -79,11 +80,11 @@ Confidence: {feedback['overallConfidence']}%
         )
 
 
-def load_dataset_from_json(json_path: str, tokenizer, max_samples: int = None) -> Dataset:
+def load_dataset_from_json(dataset_path: str, tokenizer, max_samples: int = None) -> Dataset:
     """
-    Load interview feedback dataset from JSON file.
+    Load and combine training examples from a JSON file or a directory of JSON files.
 
-    Expected JSON format:
+    Directories are read in filename order and each file must contain an array:
     [
         {
             "conversation": [{"type": "user", "content": "..."}, ...],
@@ -92,8 +93,25 @@ def load_dataset_from_json(json_path: str, tokenizer, max_samples: int = None) -
         ...
     ]
     """
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    if os.path.isdir(dataset_path):
+        json_paths = sorted(glob.glob(os.path.join(dataset_path, "training_data_*.json")))
+        if not json_paths:
+            raise FileNotFoundError(
+                f"No training_data_*.json files found in training directory: {dataset_path}"
+            )
+    else:
+        json_paths = [dataset_path]
+
+    data = []
+    for json_path in json_paths:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            file_data = json.load(f)
+        if not isinstance(file_data, list):
+            raise ValueError(f"Training data must be a JSON array: {json_path}")
+        data.extend(file_data)
+
+    if not data:
+        raise ValueError(f"No training examples found in: {dataset_path}")
 
     if max_samples:
         data = data[:max_samples]
@@ -167,18 +185,12 @@ def main(args):
     # Load dataset
     print("Loading dataset...")
     train_dataset = load_dataset_from_json(
-        os.path.join(args.dataset_path, "train.json"),
+        os.path.join(args.dataset_path, "train"),
         tokenizer,
         args.max_samples
     )
 
     val_dataset = None
-    if os.path.exists(os.path.join(args.dataset_path, "val.json")):
-        val_dataset = load_dataset_from_json(
-            os.path.join(args.dataset_path, "val.json"),
-            tokenizer,
-            args.max_samples
-        )
 
     # Load model with quantization
     print("Loading model...")
@@ -292,7 +304,7 @@ if __name__ == "__main__":
 
     # Dataset arguments
     parser.add_argument("--dataset_path", type=str, default="./data",
-                       help="Path to dataset directory containing train.json and val.json")
+                       help="Root dataset directory containing train/training_data_*.json")
     parser.add_argument("--max_samples", type=int, default=None,
                        help="Maximum number of samples to use for training")
 
