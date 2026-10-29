@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate interview datasets and evaluate Qwen output with Gemini."""
+"""Validate interview datasets and test Qwen output with Gemini."""
 
 import argparse
 import asyncio
@@ -13,18 +13,76 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
-from jsonschema import Draft202012Validator
 
 SERVICE_DIR = Path(__file__).resolve().parent
 load_dotenv(SERVICE_DIR / ".env")
 
-import main
+service: Any = None
+
+
+def feedback_validation_errors(feedback: Any) -> list[str]:
+    if not isinstance(feedback, dict):
+        return ["feedback must be an object"]
+
+    required = {
+        "rating",
+        "summary",
+        "recommendation",
+        "recommendationMessage",
+        "strengths",
+        "improvements",
+        "technicalAssessment",
+        "communicationAssessment",
+        "overallConfidence",
+    }
+    errors = [f"feedback has unexpected field {key!r}" for key in feedback.keys() - required]
+    errors.extend(f"feedback is missing field {key!r}" for key in required - feedback.keys())
+
+    rating = feedback.get("rating")
+    rating_fields = {"relevance", "technicalDepth", "clarity", "communicationQuality"}
+    if not isinstance(rating, dict):
+        errors.append("feedback.rating must be an object")
+    else:
+        errors.extend(f"feedback.rating has unexpected field {key!r}" for key in rating.keys() - rating_fields)
+        errors.extend(f"feedback.rating is missing field {key!r}" for key in rating_fields - rating.keys())
+        for key, value in rating.items():
+            if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 5:
+                errors.append(f"feedback.rating.{key} must be an integer from 1 to 5")
+
+    for key in (
+        "summary",
+        "recommendationMessage",
+        "technicalAssessment",
+        "communicationAssessment",
+    ):
+        value = feedback.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"feedback.{key} must be a non-empty string")
+
+    recommendation = feedback.get("recommendation")
+    if not isinstance(recommendation, str) or recommendation not in {"Yes", "No", "Maybe"}:
+        errors.append("feedback.recommendation must be Yes, No, or Maybe")
+
+    for key in ("strengths", "improvements"):
+        value = feedback.get(key)
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            errors.append(f"feedback.{key} must be an array of non-empty strings")
+
+    confidence = feedback.get("overallConfidence")
+    if (
+        not isinstance(confidence, int)
+        or isinstance(confidence, bool)
+        or not 1 <= confidence <= 100
+    ):
+        errors.append("feedback.overallConfidence must be an integer from 1 to 100")
+    return errors
 
 
 def load_and_validate_examples(
     folder: Path,
     pattern: str,
-    validator: Draft202012Validator,
     label: str,
 ) -> list[dict[str, Any]]:
     files = sorted(folder.glob(pattern))
@@ -41,50 +99,58 @@ def load_and_validate_examples(
                 f"line {error.lineno}, column {error.colno}: {error.msg}"
             ) from error
 
-        errors = sorted(validator.iter_errors(file_data), key=lambda error: list(error.path))
-        if errors:
-            details = "\n".join(
-                f"  - {path.name} at $"
-                f"{''.join(f'[{part}]' if isinstance(part, int) else f'.{part}' for part in error.path)}: "
-                f"{error.message}"
-                for error in errors[:20]
-            )
-            extra = f"\n  - ... and {len(errors) - 20} more validation errors" if len(errors) > 20 else ""
-            raise ValueError(f"{label} data does not match schema.json:\n{details}{extra}")
+        if not isinstance(file_data, list):
+            raise ValueError(f"{label} file {path.name} must contain a JSON array.")
 
         if not file_data:
-            print(f"Warning: {path.name} is valid but contains no examples.")
+            print(f"Warning: {path.name} contains no examples.")
+        for index, example in enumerate(file_data, start=1):
+            if not isinstance(example, dict) or set(example) != {"conversation", "feedback"}:
+                raise ValueError(
+                    f"{label} file {path.name} example {index} must contain "
+                    "only conversation and feedback fields."
+                )
+            conversation = example["conversation"]
+            if not isinstance(conversation, list) or not conversation:
+                raise ValueError(
+                    f"{label} file {path.name} example {index} needs a non-empty conversation."
+                )
+            for message in conversation:
+                if (
+                    not isinstance(message, dict)
+                    or set(message) != {"type", "content"}
+                    or not isinstance(message.get("type"), str)
+                    or message["type"] not in {"assistant", "user"}
+                    or not isinstance(message["content"], str)
+                    or not message["content"].strip()
+                ):
+                    raise ValueError(
+                        f"{label} file {path.name} example {index} has an invalid "
+                        "conversation message."
+                    )
+            feedback_errors = feedback_validation_errors(example["feedback"])
+            if feedback_errors:
+                raise ValueError(
+                    f"{label} file {path.name} example {index} has invalid feedback: "
+                    + "; ".join(feedback_errors)
+                )
         examples.extend(file_data)
 
     if not examples:
         raise ValueError(f"No examples found in {label} dataset folder: {folder}")
 
-    print(f"{label} schema check: PASS ({len(files)} file(s), {len(examples)} example(s))")
+    print(f"{label} data check: PASS ({len(files)} file(s), {len(examples)} example(s))")
     return examples
 
 
-def validate_feedback_schema(dataset_schema: dict[str, Any]) -> Draft202012Validator:
-    feedback_schema = dataset_schema["items"]["properties"]["feedback"]
-    response_schema = {
-        "$schema": dataset_schema["$schema"],
-        "$defs": dataset_schema["$defs"],
-        "type": "object",
-        "required": ["feedback"],
-        "additionalProperties": False,
-        "properties": {"feedback": feedback_schema},
-    }
-    Draft202012Validator.check_schema(response_schema)
-    return Draft202012Validator(response_schema)
-
-
 def generate_feedback(example: dict[str, Any]) -> dict[str, Any]:
-    request = main.FeedbackRequest(
+    request = service.FeedbackRequest(
         conversation=[
-            main.ConversationMessage(type=message["type"], content=message["content"])
+            service.ConversationMessage(type=message["type"], content=message["content"])
             for message in example["conversation"]
         ]
     )
-    response = asyncio.run(main.analyze_interview(request))
+    response = asyncio.run(service.analyze_interview(request))
     return response.data
 
 
@@ -172,7 +238,6 @@ def main_cli() -> int:
         description="Validate MY_AI datasets, run Qwen on held-out examples, and ask Gemini to judge grounding."
     )
     parser.add_argument("--data-dir", type=Path, default=SERVICE_DIR / "data")
-    parser.add_argument("--schema", type=Path, default=SERVICE_DIR / "data" / "schema.json")
     parser.add_argument("--model", default=os.getenv("HF_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"))
     parser.add_argument("--gemini-model", default=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"))
     parser.add_argument(
@@ -184,24 +249,12 @@ def main_cli() -> int:
     args = parser.parse_args()
 
     try:
-        dataset_schema = json.loads(args.schema.read_text(encoding="utf-8"))
-        Draft202012Validator.check_schema(dataset_schema)
-        dataset_validator = Draft202012Validator(dataset_schema)
-        feedback_validator = validate_feedback_schema(dataset_schema)
-
-        load_and_validate_examples(
-            args.data_dir / "train",
-            "training_data_*.json",
-            dataset_validator,
-            "Training",
-        )
         test_examples = load_and_validate_examples(
             args.data_dir / "test",
             "test_data_*.json",
-            dataset_validator,
             "Test",
         )
-        print("Dataset schema checks: PASS")
+        print("Test data checks: PASS")
 
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
@@ -214,6 +267,10 @@ def main_cli() -> int:
                 "Only use authorized, anonymized data; rerun with --allow-gemini-data to confirm."
             )
 
+        global service
+        import main as service_module
+
+        service = service_module
         os.environ["HF_MODEL"] = args.model
         print(f"Loading Qwen model: {args.model}")
         main.load_model()
@@ -221,21 +278,25 @@ def main_cli() -> int:
         results: list[dict[str, Any]] = []
         for index, example in enumerate(test_examples, start=1):
             print(f"Evaluating test example {index}/{len(test_examples)}...")
-            transcript = main.format_conversation_for_analysis(
+            transcript = service.format_conversation_for_analysis(
                 [
-                    main.ConversationMessage(type=message["type"], content=message["content"])
+                    service.ConversationMessage(type=message["type"], content=message["content"])
                     for message in example["conversation"]
                 ]
             )
             try:
                 qwen_response = generate_feedback(example)
-            except main.HTTPException as error:
+            except service.HTTPException as error:
                 if error.status_code != 502:
                     raise RuntimeError(
                         f"Qwen analysis failed for test example {index}: {error.detail}"
                     ) from error
                 qwen_response = {}
-            qwen_errors = list(feedback_validator.iter_errors(qwen_response))
+            qwen_errors = (
+                feedback_validation_errors(qwen_response.get("feedback"))
+                if isinstance(qwen_response, dict)
+                else ["response must be an object"]
+            )
             qwen_valid = not qwen_errors
             qwen_feedback = qwen_response.get("feedback", {}) if isinstance(qwen_response, dict) else {}
             expected_feedback = example["feedback"]

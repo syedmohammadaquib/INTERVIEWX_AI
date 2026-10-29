@@ -1,47 +1,57 @@
 # Interview analysis training data
 
 Put training files in `train/` and name them `training_data_001.json`,
-`training_data_002.json`, and so on. The fine-tuning script combines every
-matching JSON file in filename order by appending their array entries in
-memory; it does not create a merged JSON file. Each file should contain a JSON
-array of examples. `train/training_data_001.json` is an empty starter file;
-replace its contents with your reviewed examples, and add more numbered files
-as needed.
+`training_data_002.json`, and so on. Each file is a JSON array of interview
+examples matching [`schema.json`](./schema.json). The fine-tuning script
+combines matching files in filename order; it does not create a merged file.
+`train/training_data_001.json` is an empty starter file.
 
-Do not use test examples for training. Keep them separately in `test/`; see
-`test/README.md`. The current script does not read or evaluate test data.
-
-The exact machine-readable format is defined in [`schema.json`](./schema.json).
-Each dataset file is a JSON array and each item is one training example:
+Each example contains the actual interviewer/candidate conversation and a
+human-reviewed `feedback` object. The trainer converts it internally to Qwen's
+chat template: the full transcript is the input and the serialized feedback
+object is the target output. For example:
 
 ```json
 [
   {
     "conversation": [
-      { "type": "assistant", "content": "Tell me about a project you built." },
-      { "type": "user", "content": "I built a project using React..." }
+      {
+        "type": "assistant",
+        "content": "What does changing a React ref's .current value do?"
+      },
+      {
+        "type": "user",
+        "content": "It does not trigger a re-render."
+      }
     ],
     "feedback": {
       "rating": {
-        "relevance": 3,
-        "technicalDepth": 4,
+        "relevance": 4,
+        "technicalDepth": 3,
         "clarity": 4,
-        "communicationQuality": 3
+        "communicationQuality": 4
       },
-      "summary": "Human-reviewed summary of the interview.",
+      "summary": "The candidate correctly explained the effect of changing a ref.",
       "recommendation": "Maybe",
-      "recommendationMessage": "Evidence-based explanation.",
-      "strengths": ["Human-reviewed strength"],
-      "improvements": ["Human-reviewed improvement"],
-      "technicalAssessment": "Evidence-based technical assessment.",
-      "communicationAssessment": "Evidence-based communication assessment.",
-      "overallConfidence": 75
+      "recommendationMessage": "The answer is correct but brief; assess with the full interview.",
+      "strengths": ["Correctly states that changing ref.current does not render."],
+      "improvements": ["Could explain when refs are useful."],
+      "technicalAssessment": "Correctly distinguishes refs from state for rendering.",
+      "communicationAssessment": "The answer is clear and concise.",
+      "overallConfidence": 70
     }
   }
 ]
 ```
 
-Labels should be reviewed against the rubric in `../rubric.json`. Use
-consented data, remove names and other identifying details, and ensure the
-same interview or candidate does not appear in both training and test data.
-Do not put real candidate data in version control.
+The trainer uses the feedback object as its expected analysis output; it does
+not train Qwen to answer the interview question. Only the generated feedback
+tokens contribute to training loss.
+
+Have a person review both the transcript and every feedback field for accuracy
+before training. Do not treat canonical quiz answers or automatically generated
+placeholder feedback as candidate interviews or verified labels. The converter
+and trainer reject the CodePrep conversion-placeholder labels for this reason.
+Keep held-out evaluation examples separate in `test/`; use consented data,
+remove personal information, and do not put sensitive real candidate data in
+version control.

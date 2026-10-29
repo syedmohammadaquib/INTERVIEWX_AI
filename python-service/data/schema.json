@@ -1,132 +1,32 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "MY_AI Interview Feedback Dataset",
-  "description": "A dataset file is an array of interview conversation and human-reviewed feedback examples.",
-  "type": "array",
-  "items": {
-    "type": "object",
-    "required": [
-      "conversation",
-      "feedback"
-    ],
-    "additionalProperties": false,
-    "properties": {
-      "conversation": {
-        "type": "array",
-        "minItems": 1,
-        "items": {
-          "type": "object",
-          "required": [
-            "type",
-            "content"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "assistant",
-                "user"
-              ],
-              "description": "Use assistant for interviewer messages and user for candidate messages."
-            },
-            "content": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        }
-      },
-      "feedback": {
-        "type": "object",
-        "required": [
-          "rating",
-          "summary",
-          "recommendation",
-          "recommendationMessage",
-          "strengths",
-          "improvements",
-          "technicalAssessment",
-          "communicationAssessment",
-          "overallConfidence"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "rating": {
-            "type": "object",
-            "required": [
-              "relevance",
-              "technicalDepth",
-              "clarity",
-              "communicationQuality"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "relevance": {
-                "$ref": "#/$defs/rating"
-              },
-              "technicalDepth": {
-                "$ref": "#/$defs/rating"
-              },
-              "clarity": {
-                "$ref": "#/$defs/rating"
-              },
-              "communicationQuality": {
-                "$ref": "#/$defs/rating"
-              }
-            }
-          },
-          "summary": {
-            "type": "string",
-            "minLength": 1
-          },
-          "recommendation": {
-            "type": "string",
-            "enum": [
-              "Yes",
-              "No",
-              "Maybe"
-            ]
-          },
-          "recommendationMessage": {
-            "type": "string",
-            "minLength": 1
-          },
-          "strengths": {
-            "$ref": "#/$defs/textList"
-          },
-          "improvements": {
-            "$ref": "#/$defs/textList"
-          },
-          "technicalAssessment": {
-            "type": "string",
-            "minLength": 1
-          },
-          "communicationAssessment": {
-            "type": "string",
-            "minLength": 1
-          },
-          "overallConfidence": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        }
-      }
-    }
-  },
-  "$defs": {
-    "rating": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 5
+  "conversation": [
+    {
+      "type": "assistant",
+      "content": "Interviewer's question or message."
     },
-    "textList": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
+    {
+      "type": "user",
+      "content": "Candidate's answer or response."
     }
+  ],
+  "feedback": {
+    "rating": {
+      "relevance": 0,
+      "technicalDepth": 0,
+      "clarity": 0,
+      "communicationQuality": 0
+    },
+    "summary": "Evidence-based summary of the candidate's performance.",
+    "recommendation": "Yes/Maybe/No",
+    "recommendationMessage": "Evidence-based explanation of the recommendation.",
+    "strengths": [
+      "Identified strength supported by the conversation."
+    ],
+    "improvements": [
+      "Identified improvement supported by the conversation."
+    ],
+    "technicalAssessment": "Assessment of technical correctness and depth.",
+    "communicationAssessment": "Assessment of clarity and communication.",
+    "overallConfidence": 0
   }
 }

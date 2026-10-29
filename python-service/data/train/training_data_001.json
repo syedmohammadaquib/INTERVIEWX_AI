@@ -1,1 +1,167 @@
-[]
+[
+  {
+    "conversation": [
+      {
+        "type": "assistant",
+        "content": "This function should sum an array but returns `NaN`. Which line has the bug?"
+      },
+      {
+        "type": "user",
+        "content": "{\"code\": \"function sum(arr) {\\n  let total = 0;\\n  for (let i = 0; i <= arr.length; i++) {\\n    total += arr[i];\\n  }\\n  return total;\\n}\", \"language\": \"javascript\", \"buggyLines\": [3]}"
+      }
+    ],
+    "feedback": {
+      "rating": {
+        "relevance": 5,
+        "technicalDepth": 3,
+        "clarity": 4,
+        "communicationQuality": 4
+      },
+      "summary": "The response addresses the interview question and is evaluated against the dataset's reference answer/explanation. This is a reference-answer baseline, not an observed candidate response.",
+      "recommendation": "Yes",
+      "recommendationMessage": "This reference answer is broadly suitable as a correct-answer baseline. Do not treat this recommendation as a hiring decision about a real candidate.",
+      "strengths": [
+        "Addresses the question using the dataset's reference answer.",
+        "The source explanation provides supporting technical context."
+      ],
+      "improvements": [
+        "For a real interview, connect the answer to a concrete example or trade-off where relevant."
+      ],
+      "technicalAssessment": "Reference answer: {\"code\": \"function sum(arr) {\\n  let total = 0;\\n  for (let i = 0; i <= arr.length; i++) {\\n    total += arr[i];\\n  }\\n  return total;\\n}\", \"language\": \"javascript\", \"buggyLines\": [3]} Supporting source explanation: `i <= arr.length` reads one index past the end. `arr[arr.length]` is `undefined`, and `total + undefined` is `NaN`. The condition should be `i < arr.length`.",
+      "communicationAssessment": "The answer is presented as text, so spoken delivery, listening, confidence, and interpersonal communication cannot be judged from this record. Clarity is only a provisional estimate based on the written response.",
+      "overallConfidence": 55
+    }
+  },
+  {
+    "conversation": [
+      {
+        "type": "assistant",
+        "content": "How does the nullish-coalescing operator `??` differ from the logical OR `||` for defaults?"
+      },
+      {
+        "type": "user",
+        "content": "{\"back\": \"`||` falls back whenever the left side is falsy — including `0`, `''`, `NaN`, and `false`. `??` falls back only when the left side is `null` or `undefined`, so valid falsy values like `0` or `''` are preserved.\"}"
+      }
+    ],
+    "feedback": {
+      "rating": {
+        "relevance": 5,
+        "technicalDepth": 4,
+        "clarity": 4,
+        "communicationQuality": 4
+      },
+      "summary": "The response addresses the interview question and is evaluated against the dataset's reference answer/explanation. This is a reference-answer baseline, not an observed candidate response.",
+      "recommendation": "Yes",
+      "recommendationMessage": "This reference answer is broadly suitable as a correct-answer baseline. Do not treat this recommendation as a hiring decision about a real candidate.",
+      "strengths": [
+        "Addresses the question using the dataset's reference answer.",
+        "The source explanation provides supporting technical context."
+      ],
+      "improvements": [
+        "For a real interview, connect the answer to a concrete example or trade-off where relevant."
+      ],
+      "technicalAssessment": "Reference answer: {\"back\": \"`||` falls back whenever the left side is falsy — including `0`, `''`, `NaN`, and `false`. `??` falls back only when the left side is `null` or `undefined`, so valid falsy values like `0` or `''` are preserved.\"} Supporting source explanation: Use `??` when `0`/`''`/`false` are legitimate values you want to keep; `||` would wrongly replace them with the default because it triggers on any falsy value.",
+      "communicationAssessment": "The answer is presented as text, so spoken delivery, listening, confidence, and interpersonal communication cannot be judged from this record. Clarity is only a provisional estimate based on the written response.",
+      "overallConfidence": 55
+    }
+  },
+  {
+    "conversation": [
+      {
+        "type": "assistant",
+        "content": "An `async` function always returns a Promise, even if its body returns a plain value like `return 5`."
+      },
+      {
+        "type": "user",
+        "content": "{\"value\": true}"
+      }
+    ],
+    "feedback": {
+      "rating": {
+        "relevance": 5,
+        "technicalDepth": 2,
+        "clarity": 4,
+        "communicationQuality": 3
+      },
+      "summary": "The response addresses the interview question and is evaluated against the dataset's reference answer/explanation. This is a reference-answer baseline, not an observed candidate response.",
+      "recommendation": "Yes",
+      "recommendationMessage": "This reference answer is broadly suitable as a correct-answer baseline. Do not treat this recommendation as a hiring decision about a real candidate.",
+      "strengths": [
+        "Addresses the question using the dataset's reference answer.",
+        "The source explanation provides supporting technical context."
+      ],
+      "improvements": [
+        "For a real interview, add a brief explanation or example to demonstrate reasoning."
+      ],
+      "technicalAssessment": "Reference answer: {\"value\": true} Supporting source explanation: An `async` function wraps its result in a Promise. `return 5` resolves the returned Promise with `5`; throwing rejects it. To read the value you must `await` it or use `.then`.",
+      "communicationAssessment": "The answer is presented as text, so spoken delivery, listening, confidence, and interpersonal communication cannot be judged from this record. Clarity is only a provisional estimate based on the written response.",
+      "overallConfidence": 55
+    }
+  },
+  {
+    "conversation": [
+      {
+        "type": "assistant",
+        "content": "What are the arguments to the `Array.prototype.reduce` callback, and what does the optional second argument to `reduce` do?"
+      },
+      {
+        "type": "user",
+        "content": "{\"back\": \"The callback receives `(accumulator, currentValue, currentIndex, array)`. The second argument to `reduce` is the initial accumulator value; if omitted, the first element seeds the accumulator and iteration starts at index 1 (and an empty array with no initial value throws).\"}"
+      }
+    ],
+    "feedback": {
+      "rating": {
+        "relevance": 5,
+        "technicalDepth": 4,
+        "clarity": 4,
+        "communicationQuality": 4
+      },
+      "summary": "The response addresses the interview question and is evaluated against the dataset's reference answer/explanation. This is a reference-answer baseline, not an observed candidate response.",
+      "recommendation": "Yes",
+      "recommendationMessage": "This reference answer is broadly suitable as a correct-answer baseline. Do not treat this recommendation as a hiring decision about a real candidate.",
+      "strengths": [
+        "Addresses the question using the dataset's reference answer.",
+        "The source explanation provides supporting technical context."
+      ],
+      "improvements": [
+        "For a real interview, connect the answer to a concrete example or trade-off where relevant."
+      ],
+      "technicalAssessment": "Reference answer: {\"back\": \"The callback receives `(accumulator, currentValue, currentIndex, array)`. The second argument to `reduce` is the initial accumulator value; if omitted, the first element seeds the accumulator and iteration starts at index 1 (and an empty array with no initial value throws).\"} Supporting source explanation: Knowing the accumulator/initial-value semantics is the crux of `reduce`: omitting the seed both changes the starting index and makes an empty array throw.",
+      "communicationAssessment": "The answer is presented as text, so spoken delivery, listening, confidence, and interpersonal communication cannot be judged from this record. Clarity is only a provisional estimate based on the written response.",
+      "overallConfidence": 55
+    }
+  },
+  {
+    "conversation": [
+      {
+        "type": "assistant",
+        "content": "What does this log?"
+      },
+      {
+        "type": "user",
+        "content": "{\"code\": \"const { a = 5, b = 7 } = { a: undefined, b: null };\\nconsole.log(a, b);\", \"language\": \"javascript\", \"expectedOutput\": \"5 null\"}"
+      }
+    ],
+    "feedback": {
+      "rating": {
+        "relevance": 5,
+        "technicalDepth": 3,
+        "clarity": 4,
+        "communicationQuality": 4
+      },
+      "summary": "The response addresses the interview question and is evaluated against the dataset's reference answer/explanation. This is a reference-answer baseline, not an observed candidate response.",
+      "recommendation": "Yes",
+      "recommendationMessage": "This reference answer is broadly suitable as a correct-answer baseline. Do not treat this recommendation as a hiring decision about a real candidate.",
+      "strengths": [
+        "Addresses the question using the dataset's reference answer.",
+        "The source explanation provides supporting technical context."
+      ],
+      "improvements": [
+        "For a real interview, connect the answer to a concrete example or trade-off where relevant."
+      ],
+      "technicalAssessment": "Reference answer: {\"code\": \"const { a = 5, b = 7 } = { a: undefined, b: null };\\nconsole.log(a, b);\", \"language\": \"javascript\", \"expectedOutput\": \"5 null\"} Supporting source explanation: Destructuring defaults, like parameter defaults, apply only when the matched value is `undefined`. `a` is `undefined`, so it falls back to `5`; `b` is `null`, which is a defined value, so the default is skipped and `b` stays `null`.",
+      "communicationAssessment": "The answer is presented as text, so spoken delivery, listening, confidence, and interpersonal communication cannot be judged from this record. Clarity is only a provisional estimate based on the written response.",
+      "overallConfidence": 55
+    }
+  }
+]

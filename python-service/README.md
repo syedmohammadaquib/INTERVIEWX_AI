@@ -90,16 +90,17 @@ The system instruction and analysis prompt template are stored in `instructions.
 
 ### Dataset Validation and Evaluation
 
-Set `GEMINI_API_KEY` in the local `.env` file. Add labeled training examples
-under `data/train/` and held-out examples under `data/test/`, following
-`data/schema.json`. From this directory, run:
+Set `GEMINI_API_KEY` in the local `.env` file. Add human-reviewed
+conversation-and-feedback examples under `data/train/` and separate held-out
+examples under `data/test/`, following `data/schema.json`. From this directory,
+run:
 
 ```cmd
-python evaluate.py --allow-gemini-data
+python testing.py --allow-gemini-data
 ```
 
-The script validates both datasets before loading Qwen or calling Gemini. It
-then runs Qwen on each test example, checks the generated feedback schema,
+The script validates held-out test data before loading Qwen or calling Gemini.
+It then runs Qwen on each test example, checks the generated feedback shape,
 compares ratings and recommendations with human-reviewed labels, and asks
 Gemini to assess evidence grounding. Test transcripts, Qwen responses, and
 reference feedback are sent to Google Gemini, so use only anonymized data you
@@ -108,30 +109,26 @@ Gemini judge scores are estimates and should be reviewed by a human.
 
 ### Fine-tuning for Interview Analysis
 
-To create a model specialized for interview feedback:
+Add actual interviewer/candidate conversations and human-reviewed feedback
+objects to `data/train/training_data_001.json`. Qwen receives the transcript as
+input and is trained to generate the feedback JSON; it is not trained to answer
+the interview question. The starter file is empty. Keep held-out examples in
+`data/test/`; they are not used by fine-tuning.
 
-1. **Prepare Dataset:**
-```python
-# Format: conversation + feedback pairs
-training_data = [
-    {
-        "conversation": "Candidate: I know React...",
-        "feedback": {"rating": {"relevance": 4, ...}, ...}
-    }
-]
+Install dependencies and start training from this directory:
+
+```cmd
+python -m pip install -r requirements.txt
+python fine_tune.py
 ```
 
-2. **Fine-tune Model:**
-```python
-from transformers import Trainer, TrainingArguments
-
-# Load base model
-model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
-
-# Fine-tune on interview data
-trainer = Trainer(model=model, ...)
-trainer.train()
-```
+The script validates the dataset before loading the model, builds prompts from
+`instructions.json` and `rubric.json`, and uses Qwen's chat template while
+training only on the target feedback. It uses LoRA by default. The output is
+saved to `fine_tuned_model/` as an adapter, along with its tokenizer and
+training metadata. Use `--dataset_path`, `--model_name`, or `--output_dir` to
+override defaults. Training can be slow and memory intensive, especially on
+CPU. The running API does not automatically load the resulting adapter.
 
 ## 🚀 Deployment Options
 
