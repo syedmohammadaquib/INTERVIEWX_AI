@@ -88,4 +88,8 @@ python fine_tune.py --model_name Qwen/Qwen2.5-1.5B-Instruct --output_dir ./fine_
 Install dependencies first with `python -m pip install -r requirements.txt`.
 Training requires a compatible Hugging Face model and can be slow or memory
 intensive, especially on CPU. The fine-tuning script saves a LoRA adapter by
-default; it does not automatically switch the running API to that adapter.
+default. Later runs skip examples recorded as previously trained and continue
+from the saved adapter using only new examples. If no new examples are found,
+the adapter stays unchanged. After a successful run, intermediate checkpoints
+are removed; interrupted runs retain their checkpoints for resuming. The API
+does not automatically load the adapter.

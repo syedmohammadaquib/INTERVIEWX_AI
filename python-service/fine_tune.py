@@ -2,9 +2,13 @@
 """Fine-tune a Qwen model to analyze interviews and produce feedback JSON."""
 
 import argparse
+import hashlib
 import json
 import math
+import re
+import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model_name",
-        default="Qwen/Qwen2.5-1.5B-Instruct",
+        default=None,
         help="Hugging Face model name or local model directory",
     )
     parser.add_argument(
@@ -40,8 +44,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning_rate", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--warmup_steps", type=int, default=0)
-    parser.add_argument("--max_length", type=int, default=1024)
+    parser.add_argument("--max_length", type=int, default=2048)
     parser.add_argument("--logging_steps", type=int, default=10)
+    parser.add_argument(
+        "--resume_from_checkpoint",
+        type=Path,
+        default=None,
+        help="Resume an interrupted Trainer run from a saved checkpoint directory",
+    )
     parser.add_argument(
         "--use_lora",
         action=argparse.BooleanOptionalAction,
@@ -68,6 +78,16 @@ def find_training_files(dataset_path: Path) -> list[Path]:
             "Add reviewed examples to data/train/ before starting training."
         )
     return files
+
+
+def example_fingerprint(example: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        example,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def load_training_examples(dataset_path: Path, max_samples: int | None) -> list[dict[str, Any]]:
@@ -193,6 +213,62 @@ def load_training_examples(dataset_path: Path, max_samples: int | None) -> list[
     return examples
 
 
+def load_training_state(output_dir: Path) -> dict[str, Any] | None:
+    metadata_path = output_dir / "fine_tune_metadata.json"
+    if not metadata_path.exists():
+        if (output_dir / "adapter_config.json").exists():
+            raise ValueError(
+                f"Found an existing adapter in {output_dir} but no training metadata. "
+                "Restore fine_tune_metadata.json before continuing to avoid retraining data."
+            )
+        return None
+
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Could not read training metadata {metadata_path}: {error}") from error
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("model_name"), str):
+        raise ValueError(f"Training metadata is invalid: {metadata_path}")
+    fingerprints = metadata.get("trained_example_hashes")
+    if not isinstance(fingerprints, list) or not all(
+        isinstance(fingerprint, str) for fingerprint in fingerprints
+    ):
+        raise ValueError(
+            f"{metadata_path} does not track trained examples. "
+            "Refusing to train again because previously used records cannot be identified safely."
+        )
+    return metadata
+
+
+def select_unseen_examples(
+    examples: list[dict[str, Any]],
+    trained_fingerprints: set[str],
+) -> tuple[list[dict[str, Any]], set[str]]:
+    unseen: list[dict[str, Any]] = []
+    seen = set(trained_fingerprints)
+    duplicates = 0
+    for example in examples:
+        fingerprint = example_fingerprint(example)
+        if fingerprint in seen:
+            duplicates += 1
+            continue
+        seen.add(fingerprint)
+        unseen.append(example)
+    if duplicates:
+        print(f"Skipping {duplicates} already-trained or duplicate example(s).")
+    return unseen, seen
+
+
+def remove_completed_checkpoints(output_dir: Path) -> None:
+    for path in output_dir.glob("checkpoint-*"):
+        if path.is_dir() and re.fullmatch(r"checkpoint-\d+", path.name):
+            shutil.rmtree(path)
+
+    checkpoint_root = output_dir / "training_checkpoints"
+    if checkpoint_root.is_dir():
+        shutil.rmtree(checkpoint_root)
+
+
 class InterviewAnalysisDataset:
     """Render interview inputs and mask tokens so only feedback is learned."""
 
@@ -238,11 +314,13 @@ class InterviewAnalysisDataset:
                 prompt_messages,
                 tokenize=True,
                 add_generation_prompt=True,
+                return_dict=False,
             )
             input_ids = self.tokenizer.apply_chat_template(
                 messages,
                 tokenize=True,
                 add_generation_prompt=False,
+                return_dict=False,
             )
             if input_ids[: len(prompt_ids)] != prompt_ids:
                 raise ValueError(
@@ -263,11 +341,16 @@ class InterviewAnalysisDataset:
         return tokenized
 
 
-def load_ml_dependencies() -> tuple[Any, Any, Any, Any, Any, Any, Any, Any, Any]:
+def load_ml_dependencies() -> tuple[Any, ...]:
     try:
         import torch
         from datasets import Dataset
-        from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+        from peft import (
+            LoraConfig,
+            PeftModel,
+            get_peft_model,
+            prepare_model_for_kbit_training,
+        )
         from transformers import (
             AutoConfig,
             AutoModelForCausalLM,
@@ -286,6 +369,7 @@ def load_ml_dependencies() -> tuple[Any, Any, Any, Any, Any, Any, Any, Any, Any]
         torch,
         Dataset,
         LoraConfig,
+        PeftModel,
         get_peft_model,
         prepare_model_for_kbit_training,
         AutoConfig,
@@ -309,11 +393,35 @@ def train(args: argparse.Namespace, examples: list[dict[str, Any]]) -> None:
         )
     if args.logging_steps < 1:
         raise ValueError("--logging_steps must be greater than zero.")
+    if args.resume_from_checkpoint is not None:
+        checkpoint = args.resume_from_checkpoint
+        if not checkpoint.is_dir() or not (checkpoint / "trainer_state.json").is_file():
+            raise ValueError(
+                f"Checkpoint {checkpoint} is missing or has no trainer_state.json."
+            )
+
+    prior_state = load_training_state(args.output_dir)
+    model_name = args.model_name or (
+        prior_state["model_name"] if prior_state else "Qwen/Qwen2.5-1.5B-Instruct"
+    )
+    if prior_state and prior_state["model_name"] != model_name:
+        raise ValueError(
+            f"Saved adapter uses {prior_state['model_name']}; requested model is {model_name}."
+        )
+    if prior_state and not args.use_lora:
+        raise ValueError("Continuing the saved LoRA adapter requires LoRA to remain enabled.")
+
+    old_fingerprints = set(prior_state["trained_example_hashes"]) if prior_state else set()
+    new_examples, all_fingerprints = select_unseen_examples(examples, old_fingerprints)
+    if not new_examples:
+        print("No new training examples found; the saved adapter was left unchanged.")
+        return
 
     (
         torch,
         Dataset,
         LoraConfig,
+        PeftModel,
         get_peft_model,
         prepare_model_for_kbit_training,
         AutoConfig,
@@ -326,12 +434,12 @@ def train(args: argparse.Namespace, examples: list[dict[str, Any]]) -> None:
     if args.use_quantization and not torch.cuda.is_available():
         raise RuntimeError("4-bit quantization requires a supported CUDA GPU.")
 
-    print(f"Training examples: {len(examples)}")
-    print(f"Model: {args.model_name}")
+    print(f"New training examples: {len(new_examples)}")
+    print(f"Model: {model_name}")
     print(f"Output: {args.output_dir}")
     print(f"Device: {'CUDA' if torch.cuda.is_available() else 'CPU'}")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         if tokenizer.eos_token is None:
             raise ValueError("The tokenizer must define either a pad token or an EOS token.")
@@ -360,7 +468,7 @@ def train(args: argparse.Namespace, examples: list[dict[str, Any]]) -> None:
         analysis_template,
     )
     dataset = Dataset.from_dict(
-        {"messages": [processor.format_messages(example) for example in examples]}
+        {"messages": [processor.format_messages(example) for example in new_examples]}
     )
     train_dataset = dataset.map(
         processor.tokenize,
@@ -369,7 +477,7 @@ def train(args: argparse.Namespace, examples: list[dict[str, Any]]) -> None:
         desc="Tokenizing training examples",
     )
 
-    config = AutoConfig.from_pretrained(args.model_name)
+    config = AutoConfig.from_pretrained(model_name)
     if config.is_encoder_decoder:
         raise ValueError(
             "This training script supports causal language models, not encoder-decoder models."
@@ -385,32 +493,41 @@ def train(args: argparse.Namespace, examples: list[dict[str, Any]]) -> None:
         )
 
     model = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
+        model_name,
         quantization_config=quantization_config,
         device_map="auto" if torch.cuda.is_available() else None,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
     )
     if args.use_quantization:
         model = prepare_model_for_kbit_training(model)
 
     if args.use_lora:
-        lora_config = LoraConfig(
-            r=16,
-            lora_alpha=32,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM",
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-            ],
-        )
-        model = get_peft_model(model, lora_config)
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
+        if prior_state:
+            model = PeftModel.from_pretrained(
+                model,
+                str(args.output_dir),
+                is_trainable=True,
+            )
+        else:
+            lora_config = LoraConfig(
+                r=16,
+                lora_alpha=32,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM",
+                target_modules=[
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "o_proj",
+                    "gate_proj",
+                    "up_proj",
+                    "down_proj",
+                ],
+            )
+            model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
 
     model.config.use_cache = False
@@ -418,8 +535,16 @@ def train(args: argparse.Namespace, examples: list[dict[str, Any]]) -> None:
         len(train_dataset) / (args.batch_size * args.gradient_accumulation_steps)
     )
     total_steps = max(1, math.ceil(steps_per_epoch * args.num_epochs))
+    run_started_at = datetime.now(timezone.utc)
+    checkpoint_dir = (
+        args.resume_from_checkpoint.parent
+        if args.resume_from_checkpoint is not None
+        else args.output_dir / "training_checkpoints" / run_started_at.strftime(
+            "%Y%m%dT%H%M%SZ"
+        )
+    )
     training_args = TrainingArguments(
-        output_dir=str(args.output_dir),
+        output_dir=str(checkpoint_dir),
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -439,24 +564,34 @@ def train(args: argparse.Namespace, examples: list[dict[str, Any]]) -> None:
         train_dataset=train_dataset,
         data_collator=default_data_collator,
     )
-    trainer.train()
+    trainer.train(
+        resume_from_checkpoint=(
+            str(args.resume_from_checkpoint)
+            if args.resume_from_checkpoint is not None
+            else None
+        )
+    )
     model.config.use_cache = True
     trainer.save_model(str(args.output_dir))
     tokenizer.save_pretrained(str(args.output_dir))
+    metadata = {
+        "model_name": model_name,
+        "task": "interview_feedback_analysis",
+        "fine_tuned": True,
+        "method": "LoRA" if args.use_lora else "full",
+        "training_examples": len(all_fingerprints),
+        "trained_example_hashes": sorted(all_fingerprints),
+        "max_length": args.max_length,
+        "last_trained_at": run_started_at.isoformat(),
+    }
     (args.output_dir / "fine_tune_metadata.json").write_text(
         json.dumps(
-            {
-                "model_name": args.model_name,
-                "task": "interview_feedback_analysis",
-                "fine_tuned": True,
-                "method": "LoRA" if args.use_lora else "full",
-                "training_examples": len(examples),
-                "max_length": args.max_length,
-            },
+            metadata,
             indent=2,
         ),
         encoding="utf-8",
     )
+    remove_completed_checkpoints(args.output_dir)
     print(f"Training complete. Model or LoRA adapter saved to {args.output_dir}")
 
 

@@ -55,3 +55,16 @@ and trainer reject the CodePrep conversion-placeholder labels for this reason.
 Keep held-out evaluation examples separate in `test/`; use consented data,
 remove personal information, and do not put sensitive real candidate data in
 version control.
+
+## Held-out evaluation data
+
+Put evaluation files in `test/` named `test_data_001.json`,
+`test_data_002.json`, and so on. Each is a JSON array with the same
+`conversation` and fully reviewed `feedback` shape as the training examples.
+Use actual candidate answers and judgments reviewed independently of training;
+do not use canonical/reference-answer baselines or copy any example from
+`train/`. Include varied answer quality and enough conversation context to
+support each rating and written assessment. Around 15-30 diverse examples is a
+useful first evaluation set, not a substitute for a larger representative
+test. The evaluation sends transcripts and labels to Gemini for grounding
+review, so use only anonymized data you are authorized to share.

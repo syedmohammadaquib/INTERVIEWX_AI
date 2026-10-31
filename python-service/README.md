@@ -15,7 +15,7 @@ Configure the existing local `.env` file:
 ```env
 HF_MODEL=Qwen/Qwen2.5-1.5B-Instruct
 GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-3.8-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
 PORT=8000
 HOST=0.0.0.0
 ```
@@ -82,11 +82,11 @@ Service information and available endpoints.
 
 ### Selected Model
 
-The default is `Qwen/Qwen2.5-1.5B-Instruct`, an instruction-tuned causal language model loaded locally with Transformers and PyTorch. It is a starting point for CPU inference on modest hardware; evaluate its analysis quality and speed on representative interviews before relying on it. Fine-tuning has not been completed.
+The saved LoRA adapter is based on `Qwen/Qwen2.5-0.5B-Instruct`. The service loads that base model and the adapter from `fine_tuned_model/`; the adapter configuration determines the required base model.
 
 ### Analysis Instructions
 
-The system instruction and analysis prompt template are stored in `instructions.json`. The scoring definitions and evidence rules are stored separately in `rubric.json`; the service combines both files for each `/analyze` request. Edit these files to change prompt wording or grading standards without changing `main.py` or restarting the service. The `{conversation}` placeholder is replaced with the submitted interview transcript.
+The system instruction and analysis prompt template are stored in `instructions.json`. The scoring definitions and evidence rules are stored separately in `rubric.json`; the service combines both files for each `/analyze` request. Edit these files to change prompt wording or grading standards without changing `main.py` or restarting the service. The `{conversation}` placeholder is replaced with the submitted interview transcript. Generation is constrained by `output_schema.json`, and the service validates the result before returning it; malformed or incomplete output produces an explicit error instead of an invalid response.
 
 ### Dataset Validation and Evaluation
 
@@ -105,6 +105,8 @@ compares ratings and recommendations with human-reviewed labels, and asks
 Gemini to assess evidence grounding. Test transcripts, Qwen responses, and
 reference feedback are sent to Google Gemini, so use only anonymized data you
 are authorized to share. The report is written to `evaluation_report.json`.
+The evaluator uses only the configured `GEMINI_MODEL` (currently verified as
+`gemini-3.5-flash-lite`) and reports an error if that model is unavailable.
 Gemini judge scores are estimates and should be reviewed by a human.
 
 ### Fine-tuning for Interview Analysis
@@ -128,7 +130,12 @@ training only on the target feedback. It uses LoRA by default. The output is
 saved to `fine_tuned_model/` as an adapter, along with its tokenizer and
 training metadata. Use `--dataset_path`, `--model_name`, or `--output_dir` to
 override defaults. Training can be slow and memory intensive, especially on
-CPU. The running API does not automatically load the resulting adapter.
+CPU. On later runs, the script skips examples already recorded in the metadata
+and continues training the saved adapter only with new examples; if there are
+no new examples, it leaves the adapter unchanged. The API loads the adapter
+from `fine_tuned_model/` on startup. After a successful run it removes
+intermediate checkpoints; if training is interrupted, checkpoints are retained
+for resuming.
 
 ## 🚀 Deployment Options
 

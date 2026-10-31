@@ -1,0 +1,55 @@
+[
+  {
+    "conversation": [
+      {
+        "type": "assistant",
+        "content": "Walk me through how you would build a reusable search input in React that waits briefly after the user stops typing before calling an API."
+      },
+      {
+        "type": "user",
+        "content": "I would keep the input value in useState and update it with onChange. For the delay I can use setTimeout inside useEffect, and clear the previous timeout in the cleanup so it does not call the API for every key press. The effect would depend on the search value. I would also keep loading and error state."
+      },
+      {
+        "type": "assistant",
+        "content": "Why is clearing the timeout important, and what could happen if you forgot it?"
+      },
+      {
+        "type": "user",
+        "content": "Without cleanup, several timers can remain active. If I type quickly, older searches may still run and waste requests. They could also finish after the latest request and show stale results. I would consider aborting the previous fetch with AbortController as well."
+      },
+      {
+        "type": "assistant",
+        "content": "How would you render a list of results, and how would you handle an empty result set?"
+      },
+      {
+        "type": "user",
+        "content": "I would map the results and use a stable id as the key, not the array index if the list can change. While loading I would show a loading message, and if the request finishes with an empty array I would show 'No results found'. I would also show an error separately from the empty state."
+      }
+    ],
+    "feedback": {
+      "rating": {
+        "relevance": 5,
+        "technicalDepth": 4,
+        "clarity": 4,
+        "communicationQuality": 4
+      },
+      "summary": "The candidate gave a coherent implementation approach for a debounced React search field and addressed timer cleanup, stale responses, list keys, and distinct UI states. The answers were technically sound, with enough detail for a junior frontend role, although they did not discuss race-proofing in depth or show code-level precision.",
+      "recommendation": "Yes",
+      "recommendationMessage": "Recommend moving forward for a junior React role. The candidate correctly connected useState, useEffect dependencies, effect cleanup, and stable list keys to the requirements. Mentioning AbortController and separating loading, error, and empty states are useful practical signals. A follow-up coding exercise should verify implementation accuracy.",
+      "strengths": [
+        "Correctly identified effect cleanup as necessary to cancel superseded timers.",
+        "Recognized that stale network responses can overwrite newer search results.",
+        "Distinguished loading, error, and empty-result UI states.",
+        "Understands why stable keys are preferable for changing lists."
+      ],
+      "improvements": [
+        "Explain how to prevent out-of-order responses, for example by aborting requests or tracking the latest request.",
+        "Be more precise about where the fetch call and debounce timer are created in the effect.",
+        "Mention accessibility details such as an accessible label and announcing result status where appropriate."
+      ],
+      "technicalAssessment": "The core React concepts are correct. The candidate understands state, effect dependencies, cleanup, and list rendering. The answer about AbortController shows awareness of request cancellation, but the candidate did not fully explain how cancellation errors would be handled or how response ordering would be guaranteed.",
+      "communicationAssessment": "Answers were direct, relevant, and logically ordered. The candidate explained the reason behind key implementation choices rather than only naming APIs. Some details could be more specific, but the explanation was easy to follow.",
+      "overallConfidence": 92
+    }
+  }
+]

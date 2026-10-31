@@ -178,6 +178,8 @@ def judge_with_gemini(
         "contents": [{"parts": [{"text": json.dumps(judge_prompt, ensure_ascii=False)}]}],
         "generationConfig": {"responseMimeType": "application/json"},
     }
+    if not model_name.strip():
+        raise ValueError("A Gemini judge model must be configured.")
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{quote(model_name, safe='')}:generateContent"
@@ -193,21 +195,23 @@ def judge_with_gemini(
     )
 
     try:
-        with urlopen(request, timeout=90) as response:
+        with urlopen(request, timeout=45) as response:
             result = json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         body = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Gemini API returned HTTP {error.code}: {body[:1000]}") from error
-    except URLError as error:
-        raise RuntimeError(f"Could not reach Gemini API: {error.reason}") from error
-    except TimeoutError as error:
-        raise RuntimeError("Gemini API request timed out.") from error
+        raise RuntimeError(
+            f"Gemini API returned HTTP {error.code} for {model_name}: {body[:1000]}"
+        ) from error
+    except (URLError, TimeoutError) as error:
+        raise RuntimeError(f"Gemini request failed for {model_name}: {error}") from error
 
     try:
         text = result["candidates"][0]["content"]["parts"][0]["text"]
         judgment = json.loads(text)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
-        raise RuntimeError("Gemini returned a response that was not valid judge JSON.") from error
+        raise RuntimeError(
+            f"Gemini {model_name} returned invalid judge JSON."
+        ) from error
 
     score = judgment.get("evidence_grounding_score")
     claims = judgment.get("unsupported_claims")
@@ -220,7 +224,11 @@ def judge_with_gemini(
         or not all(isinstance(claim, str) for claim in claims)
         or not isinstance(explanation, str)
     ):
-        raise RuntimeError("Gemini judge JSON did not match the required result format.")
+        raise RuntimeError(
+            f"Gemini {model_name} JSON did not match the required judge format."
+        )
+
+    judgment["model_used"] = model_name
     return judgment
 
 
@@ -238,8 +246,11 @@ def main_cli() -> int:
         description="Validate MY_AI datasets, run Qwen on held-out examples, and ask Gemini to judge grounding."
     )
     parser.add_argument("--data-dir", type=Path, default=SERVICE_DIR / "data")
-    parser.add_argument("--model", default=os.getenv("HF_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"))
-    parser.add_argument("--gemini-model", default=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"))
+    parser.add_argument("--model", default=os.getenv("HF_MODEL"))
+    parser.add_argument(
+        "--gemini-model",
+        default=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+    )
     parser.add_argument(
         "--allow-gemini-data",
         action="store_true",
@@ -271,9 +282,17 @@ def main_cli() -> int:
         import main as service_module
 
         service = service_module
-        os.environ["HF_MODEL"] = args.model
-        print(f"Loading Qwen model: {args.model}")
-        main.load_model()
+        if args.model:
+            os.environ["HF_MODEL"] = args.model
+        print("Loading the configured base model and fine-tuned adapter.")
+        service.load_model()
+        if not service.loaded_model_name:
+            raise RuntimeError("The loaded Qwen base model name could not be determined.")
+        if args.model and args.model != service.loaded_model_name:
+            print(
+                f"Requested --model={args.model!r}; the saved adapter requires "
+                f"{service.loaded_model_name!r}. Reporting the model actually loaded."
+            )
 
         results: list[dict[str, Any]] = []
         for index, example in enumerate(test_examples, start=1):
@@ -301,6 +320,7 @@ def main_cli() -> int:
             qwen_feedback = qwen_response.get("feedback", {}) if isinstance(qwen_response, dict) else {}
             expected_feedback = example["feedback"]
 
+            gemini_model_used = None
             if qwen_valid:
                 judgment = judge_with_gemini(
                     api_key,
@@ -309,6 +329,7 @@ def main_cli() -> int:
                     expected_feedback,
                     qwen_feedback,
                 )
+                gemini_model_used = judgment["model_used"]
                 score_agreement = rating_agreement(
                     qwen_feedback,
                     expected_feedback,
@@ -341,10 +362,11 @@ def main_cli() -> int:
                     "score_agreement": round(score_agreement, 2),
                     "recommendation_agreement": round(recommendation_agreement, 2),
                     "evidence_grounding": round(grounding_score, 2),
+                    "gemini_model_used": gemini_model_used,
                     "overall": round(overall, 2),
                     "unsupported_claims": unsupported_claims,
                     "judge_explanation": judge_explanation,
-                    "schema_errors": [error.message for error in qwen_errors],
+                    "schema_errors": qwen_errors,
                 }
             )
 
@@ -361,7 +383,7 @@ def main_cli() -> int:
             "overall": sum(result["overall"] for result in results) / count,
         }
         report = {
-            "model": args.model,
+            "model": service.loaded_model_name,
             "gemini_model": args.gemini_model,
             "test_examples": count,
             "metrics_out_of_10": {key: round(value, 2) for key, value in averages.items()},

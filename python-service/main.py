@@ -9,11 +9,15 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import asyncio
+from peft import PeftModel
+from jsonschema import Draft202012Validator
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI(title="MY_AI Interview Analysis Service", version="1.0.0")
+SERVICE_DIR = Path(__file__).resolve().parent
+ADAPTER_DIR = Path(os.getenv("HF_ADAPTER_PATH", SERVICE_DIR / "fine_tuned_model"))
 
 class ConversationMessage(BaseModel):
     type: str  # "user" or "assistant"
@@ -29,53 +33,115 @@ class FeedbackResponse(BaseModel):
 model = None
 tokenizer = None
 generator = None
+loaded_model_name = None
+output_validator = None
+prefix_allowed_tokens_fn = None
 
 def load_model():
-    """Load the Hugging Face model for interview analysis"""
-    global model, tokenizer, generator
+    """Load the base model with the saved interview-analysis adapter."""
+    global model, tokenizer, generator, loaded_model_name
+    global output_validator, prefix_allowed_tokens_fn
 
-    model_name = os.getenv("HF_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
-
-    try:
-        print(f"Loading model: {model_name}")
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        # Add padding token if it doesn't exist
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto",
-            low_cpu_mem_usage=True
+    metadata_path = ADAPTER_DIR / "fine_tune_metadata.json"
+    adapter_config_path = ADAPTER_DIR / "adapter_config.json"
+    if not metadata_path.is_file() or not adapter_config_path.is_file():
+        raise FileNotFoundError(
+            f"Fine-tuned adapter files were not found in {ADAPTER_DIR}."
         )
 
-        # Create text generation pipeline
-        generator = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            max_new_tokens=1024,
-            temperature=0.3,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    adapter_config = json.loads(adapter_config_path.read_text(encoding="utf-8"))
+    adapter_base = adapter_config.get("base_model_name_or_path")
+    metadata_base = metadata.get("model_name")
+    if not isinstance(adapter_base, str) or not adapter_base or metadata_base != adapter_base:
+        raise ValueError(
+            f"Adapter base model in {adapter_config_path} does not match {metadata_path}."
         )
+    configured_model = os.getenv("HF_MODEL")
+    model_name = adapter_base
+    if configured_model and configured_model != adapter_base:
+        print(
+            f"HF_MODEL={configured_model!r} does not match the saved adapter; "
+            f"using the adapter's required base model {adapter_base!r}."
+        )
+    if not isinstance(model_name, str) or not model_name:
+        raise ValueError(f"No base model is configured in {metadata_path}.")
 
-        print("Model loaded successfully!")
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        # Fallback to CPU if GPU fails
-        try:
-            model = AutoModelForCausalLM.from_pretrained(model_name)
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-            generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
-            print("Model loaded on CPU")
-        except Exception as e2:
-            print(f"Failed to load model: {e2}")
-            raise
+    print(f"Loading base model: {model_name}")
+    model_load_options = {
+        "dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
+        "low_cpu_mem_usage": True,
+    }
+    if torch.cuda.is_available():
+        model_load_options["device_map"] = "auto"
+    else:
+        model_load_options["device_map"] = {"": "cpu"}
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        **model_load_options,
+    )
+    model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
+    model.eval()
+    loaded_model_name = model_name
+    tokenizer_source = ADAPTER_DIR if (ADAPTER_DIR / "tokenizer_config.json").is_file() else model_name
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    schema_path = SERVICE_DIR / "output_schema.json"
+    output_schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(output_schema)
+    output_validator = Draft202012Validator(output_schema)
+    prefix_allowed_tokens_fn = build_schema_token_filter(tokenizer, output_schema)
+
+    generator = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=1024,
+        do_sample=False,
+        pad_token_id=tokenizer.eos_token_id,
+        device=None if torch.cuda.is_available() else -1,
+    )
+    print(f"Fine-tuned adapter loaded successfully from {ADAPTER_DIR}.")
+
+
+def build_schema_token_filter(model_tokenizer, schema):
+    """Build a Transformers-compatible token filter for the output JSON schema."""
+    from lmformatenforcer import (
+        JsonSchemaParser,
+        TokenEnforcer,
+        TokenEnforcerTokenizerData,
+    )
+
+    vocab_size = len(model_tokenizer)
+    token_0 = model_tokenizer.encode("0")[-1]
+    regular_tokens = []
+    for token_id in range(vocab_size):
+        if token_id in model_tokenizer.all_special_ids:
+            continue
+        decoded_after_0 = model_tokenizer.decode([token_0, token_id])[1:]
+        decoded_token = model_tokenizer.decode([token_id])
+        is_word_start = len(decoded_after_0) > len(decoded_token)
+        regular_tokens.append((token_id, decoded_after_0, is_word_start))
+
+    def decode_tokens(tokens):
+        return model_tokenizer.decode(tokens).rstrip("�")
+
+    tokenizer_data = TokenEnforcerTokenizerData(
+        regular_tokens,
+        decode_tokens,
+        model_tokenizer.eos_token_id,
+        False,
+        vocab_size,
+    )
+    token_enforcer = TokenEnforcer(tokenizer_data, JsonSchemaParser(schema))
+
+    def allowed_tokens(_batch_id, token_ids):
+        return token_enforcer.get_allowed_tokens(token_ids.tolist()).allowed_tokens
+
+    return allowed_tokens
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -106,28 +172,40 @@ def format_conversation_for_analysis(conversation: List[ConversationMessage]) ->
 
 def parse_ai_response(response_text: str) -> Dict[str, Any]:
     """Parse the AI response into structured feedback format"""
-    start_idx = response_text.find("{")
-    end_idx = response_text.rfind("}") + 1
-
-    if start_idx == -1 or end_idx <= start_idx:
-        raise HTTPException(
-            status_code=502,
-            detail="The model did not return valid JSON feedback.",
-        )
-
     try:
-        parsed = json.loads(response_text[start_idx:end_idx])
+        parsed = json.loads(response_text)
     except json.JSONDecodeError as error:
         raise HTTPException(
             status_code=502,
             detail="The model returned malformed JSON feedback.",
         ) from error
 
-    if not isinstance(parsed, dict) or not isinstance(parsed.get("feedback"), dict):
+    if output_validator is None:
+        raise RuntimeError("The output JSON schema validator is not initialized.")
+    errors = sorted(output_validator.iter_errors(parsed), key=lambda error: list(error.path))
+    if errors:
+        detail = "; ".join(error.message for error in errors[:5])
         raise HTTPException(
             status_code=502,
-            detail="The model response is missing the feedback object.",
+            detail=f"The model response did not match the required feedback schema: {detail}",
         )
+    for field in (
+        "summary",
+        "recommendationMessage",
+        "technicalAssessment",
+        "communicationAssessment",
+    ):
+        if not parsed["feedback"][field].strip():
+            raise HTTPException(
+                status_code=502,
+                detail=f"The model returned an empty feedback.{field} value.",
+            )
+    for field in ("strengths", "improvements"):
+        if any(not item.strip() for item in parsed["feedback"][field]):
+            raise HTTPException(
+                status_code=502,
+                detail=f"The model returned an empty string in feedback.{field}.",
+            )
 
     return parsed
 
@@ -186,10 +264,10 @@ async def analyze_interview(request: FeedbackRequest):
         outputs = generator(
             formatted_prompt,
             max_new_tokens=1024,
-            temperature=0.3,
-            do_sample=True,
+            do_sample=False,
             num_return_sequences=1,
-            pad_token_id=tokenizer.eos_token_id
+            pad_token_id=tokenizer.eos_token_id,
+            prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
         )
 
         response_text = outputs[0]["generated_text"]

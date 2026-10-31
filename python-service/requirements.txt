@@ -8,3 +8,4 @@ peft>=0.13.0
 python-dotenv>=1.0.1
 pydantic>=2.9.0
 jsonschema>=4.23.0
+lm-format-enforcer>=0.10.11
